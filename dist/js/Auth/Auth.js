@@ -96,10 +96,10 @@ function useRedisAuthState(redisConfig, sessionId) {
         yield redisClient.connect();
         // Define helper functions
         const getKey = (key) => `${sessionId}:${key}`;
-        const writeData = (data, key) => __awaiter(this, void 0, void 0, function* () {
+        const writeData = (key, data) => __awaiter(this, void 0, void 0, function* () {
             try {
                 const serialized = JSON.stringify(bufferToJSON(data));
-                yield redisClient.set(`${sessionId}:${key}`, serialized);
+                yield redisClient.set(getKey(key), serialized);
             }
             catch (error) {
                 console.error(`Error writing data for key ${key}:`, error);
@@ -108,7 +108,7 @@ function useRedisAuthState(redisConfig, sessionId) {
         });
         const readData = (key) => __awaiter(this, void 0, void 0, function* () {
             try {
-                const data = yield redisClient.get(`${sessionId}:${key}`);
+                const data = yield redisClient.get(getKey(key));
                 return data ? jsonToBuffer(JSON.parse(data)) : null;
             }
             catch (error) {
@@ -121,13 +121,13 @@ function useRedisAuthState(redisConfig, sessionId) {
                 yield redisClient.del(getKey(key));
             }
             catch (error) {
-                console.error("Error removing data:", error);
+                console.error(`Error removing data for key ${key}:`, error);
             }
         });
         // Initialize credentials
         let creds;
         const data = yield readData("auth_creds");
-        creds = data ? data.creds : initAuthCreds();
+        creds = data || initAuthCreds();
         const state = {
             creds,
             keys: {
@@ -143,17 +143,10 @@ function useRedisAuthState(redisConfig, sessionId) {
                     return data;
                 }),
                 set: (data) => __awaiter(this, void 0, void 0, function* () {
-                    const tasks = [];
-                    for (const category in data) {
-                        const categoryData = data[category];
-                        if (categoryData) {
-                            for (const id in categoryData) {
-                                const value = categoryData[id];
-                                const key = `${category}-${id}`;
-                                tasks.push(value ? writeData(key, value) : removeData(key));
-                            }
-                        }
-                    }
+                    const tasks = Object.entries(data).flatMap(([category, categoryData]) => Object.entries(categoryData || {}).map(([id, value]) => {
+                        const key = `${category}-${id}`;
+                        return value ? writeData(key, value) : removeData(key);
+                    }));
                     yield Promise.all(tasks);
                 }),
             },
@@ -161,7 +154,7 @@ function useRedisAuthState(redisConfig, sessionId) {
         return {
             state,
             saveCreds: () => __awaiter(this, void 0, void 0, function* () {
-                yield writeData(state.creds, "auth_creds");
+                yield writeData("auth_creds", state.creds);
             }),
             deleteSession: () => __awaiter(this, void 0, void 0, function* () {
                 try {
@@ -173,6 +166,9 @@ function useRedisAuthState(redisConfig, sessionId) {
                 catch (error) {
                     console.error(`Error deleting session ${sessionId}:`, error);
                     throw error;
+                }
+                finally {
+                    yield redisClient.quit();
                 }
             }),
         };

@@ -1,6 +1,6 @@
 {
   "name": "redis-baileys",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Save your baileys session in redisdb  using this package",
   "main": "dist/js/index.js",
   "types": "dist/js/index.d.ts",
